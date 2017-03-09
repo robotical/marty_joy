@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<package>
+  <name>marty_joy</name>
+  <version>0.0.0</version>
+  <description>The marty_joy package</description>
+
+  <maintainer email="alex.bordallo@robotical.io">Alejandro Bordallo</maintainer>
+
+  <license>Apache</license>
+
+  <url type="website">http://robotical.io/</url>
+
+  <author email="alex.bordallo@robotical.io">Alejandro Bordallo</author>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>roscpp</build_depend>
+  <build_depend>marty_msgs</build_depend>
+  <build_depend>sensor_msgs</build_depend>
+  <build_depend>std_msgs</build_depend>
+  <run_depend>roscpp</run_depend>
+  <run_depend>marty_msgs</run_depend>
+  <run_depend>sensor_msgs</run_depend>
+  <run_depend>std_msgs</run_depend>
+
+  <!-- The export tag contains other, unspecified, tags -->
+  <export>
+    <!-- Other tools can request additional information be placed here -->
+
+  </export>
+</package>
