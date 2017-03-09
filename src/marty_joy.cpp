@@ -20,7 +20,7 @@ MartyJoy::~MartyJoy() {
 }
 
 void MartyJoy::loadParams() {
-  move_time_ = 1800;
+  move_time_ = 2000;
   refresh_time_ = 2.0;
   forw_amount_ = 50;
   turn_amount_ = 20;
@@ -28,9 +28,10 @@ void MartyJoy::loadParams() {
 }
 
 void MartyJoy::init() {
-  joy_msg_ = false;
   request_ = NO_REQ;
-  enabled_ = true;
+  enabled_ = false;
+  enable_ready_ = true;
+  called_ = false;
   eye_pos_ = EYES_NORMAL;
   stop_.request.data.push_back(stop_.request.CMD_STOP);
 
@@ -72,16 +73,16 @@ void MartyJoy::init() {
 }
 
 void MartyJoy::rosSetup() {
-  joy_sub_ = nh_.subscribe("/marty/joy", 1000, &MartyJoy::joyCB, this);
-  command_srv_ = nh_.serviceClient<marty_msgs::Command>("/marty/command", true);
+  joy_sub_ = nh_.subscribe("joy", 1000, &MartyJoy::joyCB, this);
+  ros::service::waitForService("/marty/command");
+  command_srv_ = nh_.serviceClient<marty_msgs::Command>("command", true);
   action_timer_ = nh_.createTimer(ros::Duration(refresh_time_),
-                                  &MartyJoy::acCB, this);
-  enable_pub_ = nh_.advertise<std_msgs::Bool>("/marty/enable_motors", 10);
-  servo_pub_ = nh_.advertise<marty_msgs::ServoMsgArray>("/marty/servo_array", 10);
+                                  &MartyJoy::acCB, this, true, false);
+  enable_pub_ = nh_.advertise<std_msgs::Bool>("enable_motors", 10);
+  servo_pub_ = nh_.advertise<marty_msgs::ServoMsgArray>("servo_array", 10);
 }
 
 void MartyJoy::joyCB(const sensor_msgs::Joy& msg) {
-  joy_msg_ = true;
   axes_ = msg.axes;
   buttons_ = msg.buttons;
   // axes_[0] // SideLeft/Right 1/-1
@@ -95,94 +96,114 @@ void MartyJoy::joyCB(const sensor_msgs::Joy& msg) {
   // buttons_[3] // Y Button
   // buttons_[7] // Start Button
 
-  // ANALOGUE ARM CONTROL
-  left_arm_.servo_cmd = arm_amount_ + (-arm_amount_ * axes_[2]);
-  right_arm_.servo_cmd = -arm_amount_ + (arm_amount_ * axes_[5]);
-
-  marty_msgs::ServoMsgArray servo_msg_array;
-  servo_msg_array.servo_msg.push_back(left_arm_);
-  servo_msg_array.servo_msg.push_back(right_arm_);
-
-  servo_pub_.publish(servo_msg_array);
+  if (buttons_[7] == 0) { enable_ready_ = true; }
 
   // MOVE REQUESTS
-  if (buttons_[7] == 1) {   // Start Button
+  if ((buttons_[7] == 1) && (enable_ready_ == true)) {   // Start Button
     enabled_ = !enabled_;
+    enable_ready_ = false;
+    if (enabled_) { ROS_INFO("ENABLING!"); }
+    else { ROS_INFO("DISABLING!"); }
     std_msgs::Bool enable;
     enable.data = enabled_;
     enable_pub_.publish(enable);
-    if (enabled_) { command_srv_.call(straight_); }
-  } else if (buttons_[0] == 1) {   // A Button
-    if (eye_pos_ == EYES_NORMAL) {
-      eye_pos_ = EYES_EXCITED;
-    } else if (eye_pos_ == EYES_EXCITED) {
-      eye_pos_ = EYES_WIDE;
-    } else if (eye_pos_ == EYES_WIDE) {
-      eye_pos_ = EYES_ANGRY;
-    } else if (eye_pos_ == EYES_ANGRY) {
-      eye_pos_ = EYES_NORMAL;
+    // if (enabled_) { command_srv_.call(straight_); }
+  }
+  if (enabled_) {
+    if (buttons_[0] == 1) {   // A Button
+      ROS_INFO("EYES!");
+      if (eye_pos_ == EYES_NORMAL) {
+        eye_pos_ = EYES_EXCITED;
+      } else if (eye_pos_ == EYES_EXCITED) {
+        eye_pos_ = EYES_WIDE;
+      } else if (eye_pos_ == EYES_WIDE) {
+        eye_pos_ = EYES_ANGRY;
+      } else if (eye_pos_ == EYES_ANGRY) {
+        eye_pos_ = EYES_NORMAL;
+      }
+      eyes_.request.data[1] = eye_pos_;
+      command_srv_.call(eyes_);
+    } else if (buttons_[3] == 1) {
+      request_ = CELEB;
+    } else if (buttons_[4] == 1) {
+      request_ = L_KICK;
+    } else if (buttons_[5] == 1) {
+      request_ = R_KICK;
+    } else if (axes_[0] > 0.5) {
+      request_ = L_SIDE;
+    } else if (axes_[0] < -0.5) {
+      request_ = R_SIDE;
+    } else if (axes_[6] == 1) {
+      request_ = L_LEAN;
+    } else if (axes_[6] == -1) {
+      request_ = R_LEAN;
+    } else if (axes_[7] == 1) {
+      request_ = F_LEAN;
+    } else if (axes_[7] == -1) {
+      request_ = B_LEAN;
     }
-    eyes_.request.data[1] = eye_pos_;
-    command_srv_.call(eyes_);
-  } else if (buttons_[3] == 1) {
-    request_ = CELEB;
-  } else if (buttons_[4] == 1) {
-    request_ = L_KICK;
-  } else if (buttons_[5] == 1) {
-    request_ = R_KICK;
-  } else if (axes_[0] > 0.5) {
-    request_ = L_SIDE;
-  } else if (axes_[0] < -0.5) {
-    request_ = R_SIDE;
-  } else if (axes_[6] == 1) {
-    request_ = L_LEAN;
-  } else if (axes_[6] == -1) {
-    request_ = R_LEAN;
-  } else if (axes_[7] == 1) {
-    request_ = F_LEAN;
-  } else if (axes_[7] == -1) {
-    request_ = B_LEAN;
+    // Walk if no other move was requested
+    if ((request_ == NO_REQ) && ((axes_[3] != 0.0) || (axes_[1] != 0.0))) {
+      request_ = WALK;
+    }
+    if (!called_) {
+      if (request_ == NO_REQ) {
+        // ANALOGUE ARM CONTROL
+        left_arm_.servo_cmd = arm_amount_ + (-arm_amount_ * axes_[2]);
+        right_arm_.servo_cmd = -arm_amount_ + (arm_amount_ * axes_[5]);
+
+        marty_msgs::ServoMsgArray servo_msg_array;
+        servo_msg_array.servo_msg.push_back(left_arm_);
+        servo_msg_array.servo_msg.push_back(right_arm_);
+
+        servo_pub_.publish(servo_msg_array);
+      } else {
+        called_ = true;
+        this->act();
+      }
+    }
   }
 }
 
 void MartyJoy::acCB(const ros::TimerEvent& e) {
-  if (joy_msg_) {
-    if (request_ == NO_REQ) {
-      walk_.request.data[2] = turn_amount_ * -axes_[3];
-      walk_.request.data[4] = forw_amount_ * axes_[1];
-      if ((walk_.request.data[2] != 0.0) || (walk_.request.data[4] != 0.0)) {
-        command_srv_.call(walk_);
-      }
-    } else if (request_ == L_KICK) {
-      kick_.request.data[1] = 0;
-      command_srv_.call(kick_);
-    } else if (request_ == R_KICK) {
-      kick_.request.data[1] = 1;
-      command_srv_.call(kick_);
-    } else if (request_ == CELEB) {
-      command_srv_.call(celeb_);
-    } else if (request_ == L_SIDE) {
-      side_step_.request.data[1] = 0;
-      command_srv_.call(side_step_);
-    } else if (request_ == R_SIDE) {
-      side_step_.request.data[1] = 1;
-      command_srv_.call(side_step_);
-    } else if (request_ == L_LEAN) {
-      lean_.request.data[1] = 0;
-      command_srv_.call(lean_);
-    } else if (request_ == R_LEAN) {
-      lean_.request.data[1] = 1;
-      command_srv_.call(lean_);
-    } else if (request_ == F_LEAN) {
-      lean_.request.data[1] = 2;
-      command_srv_.call(lean_);
-    } else if (request_ == B_LEAN) {
-      lean_.request.data[1] = 3;
-      command_srv_.call(lean_);
-    }
-    request_ = NO_REQ;
-    joy_msg_ = false;
+  called_ = false;
+  request_ = NO_REQ;
+  action_timer_.stop();
+}
+
+void MartyJoy::act() {
+  if (request_ == WALK) {
+    walk_.request.data[2] = turn_amount_ * -axes_[3];
+    walk_.request.data[4] = forw_amount_ * axes_[1];
+    command_srv_.call(walk_);
+  } else if (request_ == L_KICK) {
+    kick_.request.data[1] = 0;
+    command_srv_.call(kick_);
+  } else if (request_ == R_KICK) {
+    kick_.request.data[1] = 1;
+    command_srv_.call(kick_);
+  } else if (request_ == CELEB) {
+    command_srv_.call(celeb_);
+  } else if (request_ == L_SIDE) {
+    side_step_.request.data[1] = 0;
+    command_srv_.call(side_step_);
+  } else if (request_ == R_SIDE) {
+    side_step_.request.data[1] = 1;
+    command_srv_.call(side_step_);
+  } else if (request_ == L_LEAN) {
+    lean_.request.data[1] = 0;
+    command_srv_.call(lean_);
+  } else if (request_ == R_LEAN) {
+    lean_.request.data[1] = 1;
+    command_srv_.call(lean_);
+  } else if (request_ == F_LEAN) {
+    lean_.request.data[1] = 2;
+    command_srv_.call(lean_);
+  } else if (request_ == B_LEAN) {
+    lean_.request.data[1] = 3;
+    command_srv_.call(lean_);
   }
+  action_timer_.start();
 }
 
 int main(int argc, char** argv) {
@@ -190,11 +211,10 @@ int main(int argc, char** argv) {
   ros::NodeHandle nh("");
   MartyJoy marty_joy(nh);
 
-  ros::Rate r(10);
+  ros::Rate r(20);
   while (ros::ok()) {
     ros::spinOnce();
     r.sleep();
   }
-  // marty_joy.stop();
   return 0;
 }

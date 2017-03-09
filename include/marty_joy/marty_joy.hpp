@@ -25,6 +25,7 @@
 
 enum Request {
   NO_REQ = 0,
+  WALK,
   L_KICK,
   R_KICK,
   CELEB,
@@ -36,6 +37,8 @@ enum Request {
   B_LEAN,
   STRAIGHT
 };
+
+inline void sleepms(int ms) {usleep(ms * 1000);}
 
 class MartyJoy {
  protected:
@@ -54,15 +57,16 @@ class MartyJoy {
  private:
   void joyCB(const sensor_msgs::Joy& msg);
   void acCB(const ros::TimerEvent& e);
+  void act();
 
   // Flags
-  bool joy_msg_;
   bool enabled_;
+  bool called_;
+  bool enable_ready_;
 
   int move_time_;
   float refresh_time_;
   int forw_amount_;
-  // int left_amount_;
   int turn_amount_;
   int arm_amount_;
 
