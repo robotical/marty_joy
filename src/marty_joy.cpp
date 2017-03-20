@@ -20,6 +20,8 @@ MartyJoy::~MartyJoy() {
 }
 
 void MartyJoy::loadParams() {
+  nh_.param("LARM/zero", larm_z_, 0);
+  nh_.param("RARM/zero", rarm_z_, 0);
   move_time_ = 2000;
   refresh_time_ = 2.0;
   forw_amount_ = 50;
@@ -149,8 +151,12 @@ void MartyJoy::joyCB(const sensor_msgs::Joy& msg) {
     if (!called_) {
       if (request_ == NO_REQ) {
         // ANALOGUE ARM CONTROL
-        left_arm_.servo_cmd = arm_amount_ + (-arm_amount_ * axes_[2]);
-        right_arm_.servo_cmd = -arm_amount_ + (arm_amount_ * axes_[5]);
+        left_arm_.servo_cmd = arm_amount_ + (-arm_amount_ * axes_[2] + larm_z_);
+        right_arm_.servo_cmd = -arm_amount_ + (arm_amount_ * axes_[5] + rarm_z_);
+        left_arm_.servo_cmd = std::max(-126, (int)left_arm_.servo_cmd);
+        right_arm_.servo_cmd = std::max(-126, (int)right_arm_.servo_cmd);
+        left_arm_.servo_cmd = std::min(126, (int)left_arm_.servo_cmd);
+        right_arm_.servo_cmd = std::min(126, (int)right_arm_.servo_cmd);
 
         marty_msgs::ServoMsgArray servo_msg_array;
         servo_msg_array.servo_msg.push_back(left_arm_);

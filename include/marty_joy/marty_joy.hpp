@@ -9,6 +9,9 @@
 #ifndef BALL_FOLLOWER_HPP
 #define BALL_FOLLOWER_HPP
 
+// SYSTEM
+#include <algorithm>
+
 // ROS
 #include <ros/ros.h>
 
@@ -64,6 +67,9 @@ class MartyJoy {
   bool called_;
   bool enable_ready_;
 
+  // Params
+  int larm_z_;
+  int rarm_z_;
   int move_time_;
   float refresh_time_;
   int forw_amount_;
